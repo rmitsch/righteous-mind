@@ -1,11 +1,7 @@
 import tensorflow as tf
 import tensorflow_hub as hub
-import matplotlib.pyplot as plt
 import numpy as np
-import os
 import pandas as pd
-import re
-import seaborn as sns
 
 
 def run_and_plot(session_, input_tensor_, messages_, encoding_tensor):
