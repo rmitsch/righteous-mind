@@ -1,13 +1,20 @@
-# See https://towardsdatascience.com/how-to-use-twitters-api-c3e25c2ad8fe.
 import twitter
-import re
 import datetime
 import pandas as pd
+
+"""
+Other potential data sources:
+- https://www.reddit.com/r/datasets/comments/6fniik/over_one_million_tweets_collected_from_us/
+- https://www.kaggle.com/crowdflower/political-social-media-posts
+- https://data.world/bkey/politician-tweets
+- https://www.usna.edu/Users/cs/nchamber/data/twitter/
+"""
 
 
 class TwitterMiner:
     """
     Wrapper for mining user timelines.
+    Source: https://towardsdatascience.com/how-to-use-twitters-api-c3e25c2ad8fe.
     """
 
     def __init__(self, request_limit=20):
