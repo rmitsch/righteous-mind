@@ -41,7 +41,7 @@ def query_for_political_party(politican_name: str, logger: logging.Logger):
 
 def associate_political_parties(users_df: pd.DataFrame, users_path: str, logger: logging.Logger) -> pd.DataFrame:
     """
-    Get user bias for politicans sending the respective tweets.
+    Gets user bias for politicans sending the respective tweets.
     :param users_df:
     :param users_path:
     :param logger:
@@ -52,7 +52,8 @@ def associate_political_parties(users_df: pd.DataFrame, users_path: str, logger:
     # Complement party information for individuals for which it could not be captured automatically.
     users_df = refine_party_affiliation(users_df)
 
-    users_df.to_pickle(path=users_path.split(".")[:-1][0] + ".pkl")
+    if len(users_df) > 0:
+        users_df.to_pickle(path=users_path.split(".")[:-1][0] + ".pkl")
 
     return users_df
 
@@ -106,7 +107,7 @@ def load_data(users_input_path: str, tweets_input_path: str, logger: logging.Log
 
     # Read tweets.
     if tweets_input_path.endswith(".pkl"):
-        logger.info("Reading " + users_input_path + ".")
+        logger.info("Reading " + tweets_input_path + ".")
         _tweets_df = pd.read_pickle(path=tweets_input_path)
     else:
         logger.info("Reading and parsing " + tweets_input_path + ".")
@@ -138,26 +139,32 @@ def refine_party_affiliation(users_df: pd.DataFrame) -> pd.DataFrame:
     """
     democratic_names = {
         "Collin Peterson", "John Carney", "USRick Nolan", "Dan Malloy", "Mark Dayton", "USAl Lawson Jr",
-        "Nanette D. Barragán", "Jared Huffman", "TeamMoulton"
+        "Nanette D. Barragán", "Jared Huffman", "TeamMoulton", "Bernie Sanders", "Al Franken"
     }
     republican_names = {
         "Bill Walker", "evinBrady", "Dr. Roger Marshall", "Roger Marshall", "Dr. Neal Dunn", "Steve Chabot 🇺🇸",
         "Asa Hutchinson", "Paul R. LePage", "Sam Brownback", "Jerry Morran", "Sensenbrenner Press",
         "Mac Thornberry Press", "Paul Gosar, DDS", "John Faso", "cottPerry", "Daniel Webster", "SenDanSullivan",
-        "tiberipress"
+        "tiberipress", "Hatch Office", "Jerry Moran"
     }
     libertarian_names = {
         "Judge Carter"
     }
     # List of accounts to drop due to a lack of stringend political affiliation.
     to_remove = {
-        "arkAmodei", "Jasmine Coleman"
+        "arkAmodei", "Jasmine Coleman", "Angus King"
     }
 
     users_df.loc[users_df.name.isin(democratic_names), "party"] = "Democratic Party"
     users_df.loc[users_df.name.isin(republican_names), "party"] = "Republic Party"
     users_df.loc[users_df.name.isin(libertarian_names), "party"] = "Libertarians"
-    users_df.drop(users_df.name.isin(to_remove).index, inplace=True)
+    users_df.party = users_df.party. \
+        str.replace("Democratic Party of Oregon", "Democratic Party"). \
+        str.replace("Montana Republican Party", "Republican Party"). \
+        str.replace("Republic Party", "Republican Party")
+    users_df = users_df.loc[~users_df.name.isin(to_remove)]
+
+    assert len(users_df.isnull()) != 0, "Records not assigned to any party in dataframe."
 
     return users_df
 
@@ -172,10 +179,8 @@ if __name__ == '__main__':
     logger.info("Loading data.")
     users_df, tweets_df = load_data(args.users_path, args.tweets_path, logger)
 
-    logger.info("Getting party affiliation.")
+    # logger.info("Getting party affiliation.")
     # users_df = associate_political_parties(users_df, args.users_path, logger)
 
-    users_df = refine_party_affiliation(users_df)
-    # users_df.to_pickle(path=args.users_path.split(".")[:-1][0] + ".pkl")
+    # todo Next: Get data for moral value framework.
 
-    # print(users_df[['name']].groupby(['party']).agg(['count']))
