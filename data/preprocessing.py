@@ -2,6 +2,7 @@
 #   - set topic seeds for moral values.
 #   - add sentiment/intensity analysis
 #   - apply guided topic modeling
+#   - test dataflow
 
 """
 Workflow after preprocessing:

@@ -6,6 +6,7 @@ import requests
 import bs4
 import time
 from symspellpy.symspellpy import SymSpell, Verbosity
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 
 class Corpus:
@@ -35,17 +36,29 @@ class Corpus:
         logger.info("Loading data.")
         self._users_df, self._tweets_df = self._load_data()
 
-        # logger.info("Getting party affiliation.")
-        users_df = self._associate_political_parties()
+        logger.info("Getting party affiliation.")
+        self._users_df = self._associate_political_parties()
 
         # Note: Spelling correction does not seem necessary right now.
         # logger.info("Correcting spelling errors.")
         # self._tweets_df = self._correct_spelling_errors()
 
-        self._tweets_df = self._tweets_df.sample(frac=1)
-        for idx, record in self._tweets_df.iterrows():
-            print(record.text)
-            input()
+        logger.info("Calculating intensity scores.")
+        self._estimate_emotional_intensity()
+
+    def _estimate_emotional_intensity(self):
+        """
+        Estimates emotional intensity in each tweet.
+        Adds pandas series with "intensity" score calculated as 1 - neutral score as determined by VADER to tweet data-
+        frame.
+        :return
+        """
+
+        # Ignore, if "intensity" is already in dataframe.
+        if "intensity" not in self._tweets_df.columns:
+            analyzer = SentimentIntensityAnalyzer()
+            self._tweets_df["intensity"] = self._tweets_df.text.apply(lambda x: 1 - analyzer.polarity_scores(x)["neu"])
+            self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
     def _correct_spelling_errors(self):
         sym_spell = SymSpell(
@@ -99,7 +112,9 @@ class Corpus:
             if len(users_df) > 0:
                 users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
 
-        return users_df
+            return users_df
+
+        return self._users_df
 
     @staticmethod
     def _add_tweets_to_df_from_line_buffer(df: pd.DataFrame, buffer: list) -> pd.DataFrame:
