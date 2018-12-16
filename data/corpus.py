@@ -5,12 +5,21 @@ from typing import Tuple
 import requests
 import bs4
 import time
+from symspellpy.symspellpy import SymSpell, Verbosity
 
 
 class Corpus:
     """
     Class handling all tweet- and tweeter-related data processing tasks.
     """
+
+    symspell_config = {
+        "initial_capacity": 83000,
+        "max_edit_distance_dictionary": 2,
+        "prefix_length": 7,
+        "max_edit_distance_lookup": 2,
+        "suggestion_verbosity": Verbosity.CLOSEST
+    }
 
     def __init__(self, user_path: str, tweets_path: str, logger: logging.Logger):
         """
@@ -27,12 +36,31 @@ class Corpus:
         self._users_df, self._tweets_df = self._load_data()
 
         # logger.info("Getting party affiliation.")
-        # users_df = associate_political_parties(users_df, args.users_path, logger)
+        users_df = self._associate_political_parties()
 
-        logger.info("Correcting spelling errors.")
-        tweets_df = self._correct_spelling_errors()
+        # Note: Spelling correction does not seem necessary right now.
+        # logger.info("Correcting spelling errors.")
+        # self._tweets_df = self._correct_spelling_errors()
+
+        self._tweets_df = self._tweets_df.sample(frac=1)
+        for idx, record in self._tweets_df.iterrows():
+            print(record.text)
+            input()
 
     def _correct_spelling_errors(self):
+        sym_spell = SymSpell(
+            Corpus.symspell_config["initial_capacity"],
+            Corpus.symspell_config["max_edit_distance_dictionary"],
+            Corpus.symspell_config["prefix_length"]
+        )
+        config = Corpus.symspell_config
+
+        self._tweets_df = self._tweets_df.sample(frac=1)
+        for idx, record in self._tweets_df.iterrows():
+            suggestions = sym_spell.lookup_compound(record.text, config["max_edit_distance_lookup"])
+            for suggestion in suggestions:
+                print("  {}, {}, {}".format(suggestion.term, suggestion.count, suggestion.distance))
+
         return self._tweets_df
 
     def _query_for_political_party(self, politican_name: str):
@@ -56,20 +84,20 @@ class Corpus:
 
         return result.text if result is not None else None
 
-    def _associate_political_parties(self, users_df: pd.DataFrame, users_path: str) -> pd.DataFrame:
+    def _associate_political_parties(self) -> pd.DataFrame:
         """
         Gets user bias for politicans sending the respective tweets.
-        :param users_df:
-        :param users_path:
         :return: Dataframe with politicians + party affiliation.
         """
 
-        users_df["party"] = users_df.name.apply(lambda x: self._query_for_political_party(x))
-        # Complement party information for individuals for which it could not be captured automatically.
-        users_df = Corpus._refine_party_affiliation(users_df)
+        # Only if not done already: Get party affiliation.
+        if "party" not in self._users_df.columns:
+            self._users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x))
+            # Complement party information for individuals for which it could not be captured automatically.
+            users_df = Corpus._refine_party_affiliation(self._users_df)
 
-        if len(users_df) > 0:
-            users_df.to_pickle(path=users_path.split(".")[:-1][0] + ".pkl")
+            if len(users_df) > 0:
+                users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
 
         return users_df
 
@@ -138,6 +166,7 @@ class Corpus:
                 # Add remaining lines, store as pickle.
                 _tweets_df = self._add_tweets_to_df_from_line_buffer(df=_tweets_df, buffer=buffer)
                 _tweets_df = _tweets_df.drop(["withheld_copyright", "withheld_in_countries", "withheld_scope"], axis=1)
+                _tweets_df.text = _tweets_df.str.replace("&amp;", "")
                 _tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
         return _users_df, _tweets_df
