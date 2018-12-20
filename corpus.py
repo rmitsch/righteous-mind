@@ -7,6 +7,7 @@ import bs4
 import time
 from symspellpy.symspellpy import SymSpell, Verbosity
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from tqdm import tqdm
 
 
 class Corpus:
@@ -80,10 +81,11 @@ class Corpus:
 
         return self._tweets_df
 
-    def _query_for_political_party(self, politican_name: str):
+    def _query_for_political_party(self, politican_name: str, progress_bar: tqdm):
         """
         Queries google for political party of specified politician.
         :param politican_name:
+        :param progress_bar:
         :return:
         """
 
@@ -97,6 +99,7 @@ class Corpus:
         soup = bs4.BeautifulSoup(r.text, 'lxml')
         result = soup.find('div', class_='Z0LcW')
         self._logger.info(politican_name + ": " + (result.text if result is not None else "None"))
+        progress_bar.update(1)
         time.sleep(1)
 
         return result.text if result is not None else None
@@ -110,7 +113,10 @@ class Corpus:
         # Only if not done already: Get party affiliation.
         if "party" not in self._users_df.columns:
             users_df = self._users_df
-            users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x))
+            pbar = tqdm(total=len(users_df))
+            users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x, pbar))
+            pbar.close()
+
             # Complement party information for individuals for which it could not be captured automatically.
             users_df = Corpus._refine_party_affiliation(users_df)
 
@@ -228,3 +234,11 @@ class Corpus:
         assert len(users_df.isnull()) != 0, "Records not assigned to any party in dataframe."
 
         return users_df
+
+    @property
+    def users(self):
+        return self._users_df
+
+    @property
+    def tweets(self):
+        return self._tweets_df

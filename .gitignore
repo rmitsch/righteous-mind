@@ -106,3 +106,7 @@ venv.bak/
 .idea/
 config.ini
 log.txt
+
+/data
+!/data/*.dic
+!/data/frequency_dictionary_en_82_765.txt

@@ -16,6 +16,7 @@ Workflow after preprocessing:
 
 import argparse
 import utils
+from corpus import Corpus
 from moral_matrix import MoralMatrix
 
 if __name__ == '__main__':
@@ -29,5 +30,5 @@ if __name__ == '__main__':
     logger = utils.setup_custom_logger("preprocessing")
 
     moral_matrix = MoralMatrix(args.moral_dictionary_path, args.elmo_cache_directory, logger)
-    # corpus = data.corpus.Corpus(args.users_path, args.tweets_path, logger)
+    # corpus = Corpus(args.users_path, args.tweets_path, logger)
 
