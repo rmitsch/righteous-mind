@@ -18,7 +18,6 @@ Workflow after preprocessing:
 
 import argparse
 import utils
-import data.corpus
 from moral_matrix import MoralMatrix
 
 if __name__ == '__main__':

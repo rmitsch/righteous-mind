@@ -23,6 +23,10 @@ class MoralMatrix:
         self._moral_matrix_weights = MoralMatrix._define_moral_matrix_weights()
         self._morals_to_words_df, self._words_to_morals_df = MoralMatrix.read_moral_dictionary(path_to_file)
 
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
+            print(self._morals_to_words_df)
+            print(self._words_to_morals_df)
+
     @staticmethod
     def read_moral_dictionary(path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
