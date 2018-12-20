@@ -1,9 +1,13 @@
 """
 Data and utilities related to the moral matrix weighting scheme introduced in TRM.
 """
+import os
 
 import pandas as pd
 from typing import Tuple
+import tensorflow as tf
+import tensorflow_hub as hub
+import logging
 
 
 class MoralMatrix:
@@ -14,14 +18,27 @@ class MoralMatrix:
         - V1: https://www.moralfoundations.org/othermaterials
     """
 
-    def __init__(self, path_to_file: str):
+    def __init__(self, path_to_file: str, elmo_cache_directory: str, logger: logging.Logger):
         """
         Initializes moral matrix value data.
         :param path_to_file: Path to .dic file with terms per moral value.
+        :param elmo_cache_directory: Directory in which to store ELMO model.
         """
+        logger.info("Initializing moral matrix and ELMO.")
 
         self._moral_matrix_weights = MoralMatrix._define_moral_matrix_weights()
         self._morals_to_words_df, self._words_to_morals_df = MoralMatrix.read_moral_dictionary(path_to_file)
+
+        # Load elmo TF module.
+        os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
+        self._elmo = hub.Module("https://tfhub.dev/google/elmo/2")
+
+        embeddings = self._elmo(
+            ["the cat is on the mat", "dogs are in the fog"],
+            signature="default",
+            as_dict=True
+        )["elmo"]
+        print(embeddings)
 
         with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
             print(self._morals_to_words_df)

@@ -1,6 +1,4 @@
 # todo
-#   - set topic seeds for moral values.
-#   - add sentiment/intensity analysis
 #   - apply guided topic modeling
 #   - test dataflow
 
@@ -25,10 +23,11 @@ if __name__ == '__main__':
     parser.add_argument("-t", dest="tweets_path", type=str)
     parser.add_argument("-u", dest="users_path", type=str)
     parser.add_argument("-d", dest="moral_dictionary_path", type=str)
+    parser.add_argument("-e", dest="elmo_cache_directory", type=str)
     args = parser.parse_args()
 
     logger = utils.setup_custom_logger("preprocessing")
 
-    moral_matrix = MoralMatrix(path_to_file=args.moral_dictionary_path)
+    moral_matrix = MoralMatrix(args.moral_dictionary_path, args.elmo_cache_directory, logger)
     # corpus = data.corpus.Corpus(args.users_path, args.tweets_path, logger)
 

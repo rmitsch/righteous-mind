@@ -61,6 +61,10 @@ class Corpus:
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
     def _correct_spelling_errors(self):
+        """
+        Corrects spelling errors in tweets using symspell.
+        :return:
+        """
         sym_spell = SymSpell(
             Corpus.symspell_config["initial_capacity"],
             Corpus.symspell_config["max_edit_distance_dictionary"],
@@ -105,9 +109,10 @@ class Corpus:
 
         # Only if not done already: Get party affiliation.
         if "party" not in self._users_df.columns:
-            self._users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x))
+            users_df = self._users_df
+            users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x))
             # Complement party information for individuals for which it could not be captured automatically.
-            users_df = Corpus._refine_party_affiliation(self._users_df)
+            users_df = Corpus._refine_party_affiliation(users_df)
 
             if len(users_df) > 0:
                 users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
