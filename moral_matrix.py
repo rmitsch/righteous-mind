@@ -6,8 +6,10 @@ import os
 import pandas as pd
 from typing import Tuple
 import tensorflow as tf
+from tensorflow.python.client import session as tf_session
 import tensorflow_hub as hub
 import logging
+from scipy import spatial
 
 
 class MoralMatrix:
@@ -29,20 +31,34 @@ class MoralMatrix:
         self._moral_matrix_weights = MoralMatrix._define_moral_matrix_weights()
         self._morals_to_words_df, self._words_to_morals_df = MoralMatrix.read_moral_dictionary(path_to_file)
 
-        # Load elmo TF module.
+        # Load elmo TF module and initialize session.
         os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
-        self._elmo = hub.Module("https://tfhub.dev/google/elmo/2")
+        self._elmo, self._tf_session = MoralMatrix.initialize_elmo(elmo_cache_directory)
 
         embeddings = self._elmo(
-            ["the cat is on the mat", "dogs are in the fog"],
+            ["the cat is on the", "dog are in the fog"],
             signature="default",
             as_dict=True
         )["elmo"]
-        print(embeddings)
 
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
-            print(self._morals_to_words_df)
-            print(self._words_to_morals_df)
+        print(1 - spatial.distance.cosine(self._tf_session.run(embeddings[0][1]), self._tf_session.run(embeddings[1][0])))
+
+    @staticmethod
+    def initialize_elmo(elmo_cache_directory: str) -> Tuple[hub.module.Module, tf_session.Session]:
+        """
+        Initializes ELMO and the corresponding TF session.
+        :param elmo_cache_directory:
+        :return:
+        """
+
+        os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
+
+        elmo = hub.Module("https://tfhub.dev/google/elmo/2")
+        init = tf.initialize_all_variables()
+        session = tf.Session()
+        session.run(init)
+
+        return elmo, session
 
     @staticmethod
     def read_moral_dictionary(path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
