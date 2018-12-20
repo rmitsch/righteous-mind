@@ -5,13 +5,10 @@ import os
 
 import pandas as pd
 from typing import Tuple
-import tensorflow as tf
-from tensorflow.python.client import session as tf_session
-import tensorflow_hub as hub
 import logging
-from scipy import spatial
-from tqdm import tqdm
-import numpy as np
+import utils
+import tensorflow_hub as hub
+from tensorflow.python.client import session as tf_session
 
 
 class MoralMatrix:
@@ -22,18 +19,18 @@ class MoralMatrix:
         - V1: https://www.moralfoundations.org/othermaterials
     """
 
-    def __init__(self, path_to_file: str, elmo_cache_directory: str, logger: logging.Logger):
+    def __init__(self, path_to_file: str, elmo: hub.Module, tf_session: tf_session.Session, logger: logging.Logger):
         """
         Initializes moral matrix value data.
         :param path_to_file: Path to .dic file with terms per moral value.
-        :param elmo_cache_directory: Directory in which to store ELMO model.
+        :param elmo: TF ELMo module.
+        :param tf_session: TF session to use for inference tensors.
         """
-        self._logger = logger
         logger.info("Initializing moral matrix.")
 
-        # Load elmo TF module and initialize session.
-        os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
-        self._elmo, self._tf_session = MoralMatrix._initialize_elmo(elmo_cache_directory)
+        self._logger = logger
+        self._elmo = elmo
+        self._tf_session = tf_session
 
         # Define moral value weighting; read and process moral dictionary.
         # Note: Stored as pickle and generate only in case of pickle not being available.
@@ -47,23 +44,6 @@ class MoralMatrix:
         else:
             self._morals_to_phrases_df = pd.read_pickle(path=morals_to_phrases_path)
             self._phrase_embeddings = pd.read_pickle(path=phrase_embeddings_path)
-
-    @staticmethod
-    def _initialize_elmo(elmo_cache_directory: str) -> Tuple[hub.module.Module, tf_session.Session]:
-        """
-        Initializes ELMO and the corresponding TF session.
-        :param elmo_cache_directory:
-        :return:
-        """
-
-        os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
-
-        elmo = hub.Module("https://tfhub.dev/google/elmo/2")
-        init = tf.initialize_all_variables()
-        session = tf.Session()
-        session.run(init)
-
-        return elmo, session
 
     def _read_moral_dictionary(self, path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """

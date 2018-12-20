@@ -29,6 +29,10 @@ if __name__ == '__main__':
 
     logger = utils.setup_custom_logger("preprocessing")
 
-    moral_matrix = MoralMatrix(args.moral_dictionary_path, args.elmo_cache_directory, logger)
-    # corpus = Corpus(args.users_path, args.tweets_path, logger)
+    # Load elmo TF module and initialize session.
+    logger.info("Initializing ELMo.")
+    elmo, tf_session = utils.initialize_elmo(args.elmo_cache_directory)
 
+    # Prepare corpus and moral value matrix.
+    moral_matrix = MoralMatrix(args.moral_dictionary_path, elmo, tf_session, logger)
+    corpus = Corpus(args.users_path, args.tweets_path, logger)
