@@ -19,14 +19,17 @@ Workflow after preprocessing:
 import argparse
 import utils
 import data.corpus
-
+from moral_matrix import MoralMatrix
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", dest="tweets_path", type=str)
     parser.add_argument("-u", dest="users_path", type=str)
+    parser.add_argument("-d", dest="moral_dictionary_path", type=str)
     args = parser.parse_args()
 
     logger = utils.setup_custom_logger("preprocessing")
-    corpus = data.corpus.Corpus(args.users_path, args.tweets_path, logger)
+
+    moral_matrix = MoralMatrix(path_to_file=args.moral_dictionary_path)
+    # corpus = data.corpus.Corpus(args.users_path, args.tweets_path, logger)
 

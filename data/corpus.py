@@ -54,7 +54,7 @@ class Corpus:
         :return
         """
 
-        # Ignore, if "intensity" is already in dataframe.
+        # Ignore if "intensity" is already in dataframe.
         if "intensity" not in self._tweets_df.columns:
             analyzer = SentimentIntensityAnalyzer()
             self._tweets_df["intensity"] = self._tweets_df.text.apply(lambda x: 1 - analyzer.polarity_scores(x)["neu"])
