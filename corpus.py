@@ -8,6 +8,10 @@ import time
 from symspellpy.symspellpy import SymSpell, Verbosity
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from tqdm import tqdm
+import tensorflow_hub as hub
+from tensorflow.python.client import session as tf_session
+import wordsegment
+from spacy.lang.en.stop_words import STOP_WORDS
 
 
 class Corpus:
@@ -17,13 +21,13 @@ class Corpus:
 
     symspell_config = {
         "initial_capacity": 83000,
-        "max_edit_distance_dictionary": 2,
+        "max_edit_distance_dictionary": 3,
         "prefix_length": 7,
-        "max_edit_distance_lookup": 2,
+        "max_edit_distance_lookup": 3,
         "suggestion_verbosity": Verbosity.CLOSEST
     }
 
-    def __init__(self, user_path: str, tweets_path: str, logger: logging.Logger):
+    def __init__(self, user_path: str, tweets_path: str, elmo: hub.Module, tf_session: tf_session.Session, logger: logging.Logger):
         """
         Initializes corpus by loading data.
         :param user_path:
@@ -33,19 +37,83 @@ class Corpus:
         self._logger = logger
         self._user_path = user_path
         self._tweets_path = tweets_path
+        self._elmo = elmo
+        self._tf_session = tf_session
+        self._stop_words = STOP_WORDS
+        self._stop_words.update((
+            "here", "its", "im", "the", "in", "w", "you", "i", "u", "r", "b", "tbt", "ut", "ive", "wknd", "said"
+        ))
 
-        logger.info("Loading data.")
         self._users_df, self._tweets_df = self._load_data()
-
-        logger.info("Getting party affiliation.")
         self._users_df = self._associate_political_parties()
-
         # Note: Spelling correction does not seem necessary right now.
-        # logger.info("Correcting spelling errors.")
         # self._tweets_df = self._correct_spelling_errors()
-
-        logger.info("Calculating intensity scores.")
         self._estimate_emotional_intensity()
+        self._clean_tweets()
+        self._infer_elmo_embeddings_for_tweets()
+
+    @staticmethod
+    def _transform_hashtags_to_words(text: str) -> str:
+        """
+        Tries to transform hashtags into words.
+        :param text:
+        :return:
+        """
+
+        tokens = text.split()
+        text_refined = []
+
+        for i, token in enumerate(tokens):
+            if token.startswith("#"):
+                text_refined.extend([word.lower() for word in wordsegment.segment(token[1:])])
+            else:
+                text_refined.append(token.lower())
+
+        # Return concatenated text in lower case and w/o stop words.
+        return " ".join(text_refined)
+
+    def _clean_tweets(self):
+        """
+        Removes stopwords and non-interpretable symbols (URLs, hashtags, user handles, etc.) from tweets.
+        :return:
+        """
+
+        if "clean_text" not in self._tweets_df:
+            self._logger.info("Cleaning tweets.")
+
+            # Try to transform hashtags into real words.
+            wordsegment.load()
+            self._tweets_df = self._tweets_df
+            self._tweets_df["clean_text"] = self._tweets_df.text.apply(lambda x: Corpus._transform_hashtags_to_words(x))
+
+            # Remove URLs, user handles, useless characters.
+            self._tweets_df.clean_text = self._tweets_df.clean_text. \
+                str.replace(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+", ""). \
+                str.replace(
+                    r"rt |RT |&|[|]|\"|'|\\n|:|→|http…|ht…|,|\(|\)|🇺🇸|\.|⚡|“|!|\?|”|’|–|-|'|\+|gt;|…|\d|\\\w*|%|📷|#|"
+                    r"👇🏽",
+                    " "
+                ). \
+                str.replace(r"@\w*|/\w*", ""). \
+                str.replace(r"\s+", " "). \
+                str.strip()
+
+            # Remove stopwords.
+            self._tweets_df.clean_text = self._tweets_df.clean_text.apply(
+                lambda x: " ".join([item for item in x.split() if item not in STOP_WORDS and len(item) > 1])
+            )
+
+            # Save update dataframe.
+            self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+        
+    def _infer_elmo_embeddings_for_tweets(self):
+        """
+        Infers ELMo embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
+        :return:
+        """
+
+        if "embeddings" not in self._tweets_df.columns:
+            self._logger.info("Inferring ELMo embeddings for moral dictionary.")
 
     def _estimate_emotional_intensity(self):
         """
@@ -57,6 +125,7 @@ class Corpus:
 
         # Ignore if "intensity" is already in dataframe.
         if "intensity" not in self._tweets_df.columns:
+            self._logger.info("Calculating intensity scores.")
             analyzer = SentimentIntensityAnalyzer()
             self._tweets_df["intensity"] = self._tweets_df.text.apply(lambda x: 1 - analyzer.polarity_scores(x)["neu"])
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
@@ -112,6 +181,8 @@ class Corpus:
 
         # Only if not done already: Get party affiliation.
         if "party" not in self._users_df.columns:
+            self._logger.info("Getting party affiliation.")
+
             users_df = self._users_df
             pbar = tqdm(total=len(users_df))
             users_df["party"] = self._users_df.name.apply(lambda x: self._query_for_political_party(x, pbar))

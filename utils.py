@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import sys
@@ -42,3 +43,19 @@ def initialize_elmo(elmo_cache_directory: str) -> Tuple[hub.module.Module, tf_se
     session.run(init)
 
     return elmo, session
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parses arguments.
+    :return: Result of argparse.parse_args().
+    """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", dest="tweets_path", type=str)
+    parser.add_argument("-u", dest="users_path", type=str)
+    parser.add_argument("-d", dest="moral_dictionary_path", type=str)
+    parser.add_argument("-e", dest="elmo_cache_directory", type=str)
+    args = parser.parse_args()
+
+    return args

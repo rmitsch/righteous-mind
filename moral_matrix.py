@@ -6,7 +6,6 @@ import os
 import pandas as pd
 from typing import Tuple
 import logging
-import utils
 import tensorflow_hub as hub
 from tensorflow.python.client import session as tf_session
 
