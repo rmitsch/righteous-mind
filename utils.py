@@ -37,6 +37,7 @@ def initialize_elmo(elmo_cache_directory: str) -> Tuple[hub.module.Module, tf_se
     """
     os.environ["TFHUB_CACHE_DIR"] = elmo_cache_directory
 
+    # todo set inter_op_parallelism_threads.
     elmo = hub.Module("https://tfhub.dev/google/elmo/2")
     init = tf.initialize_all_variables()
     session = tf.Session()
@@ -55,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-t", dest="tweets_path", type=str)
     parser.add_argument("-u", dest="users_path", type=str)
     parser.add_argument("-d", dest="moral_dictionary_path", type=str)
-    parser.add_argument("-e", dest="elmo_cache_directory", type=str)
+    parser.add_argument("-e", dest="model_cache_directory", type=str)
     args = parser.parse_args()
 
     return args

@@ -116,8 +116,13 @@ class Corpus:
         :return:
         """
 
+        # multiple words in moral dict.:
+        #   - sentence embeddings
+        #   - check if exact words match before cleaning; compare phrases afterwards (cumbersome)
+        #   - average embedding for words in moral phrase
+
         self._logger.info("Inferring ELMo embeddings for moral dictionary.")
-        # Get number of tokens in string.
+        # Prepare dataframe if this is the first inference run.
         if "embeddings" not in self._tweets_df:
             self._tweets_df["num_words"] = self._tweets_df.clean_text.str.split().apply(len)
             self._tweets_df["embeddings"] = None
@@ -174,7 +179,7 @@ class Corpus:
         )
         config = Corpus.symspell_config
 
-        self._tweets_df = self._tweets_df.sample(frac=1)
+        # self._tweets_df = self._tweets_df.sample(frac=1)
         for idx, record in self._tweets_df.iterrows():
             suggestions = sym_spell.lookup_compound(record.text, config["max_edit_distance_lookup"])
             for suggestion in suggestions:

@@ -8,6 +8,8 @@ from typing import Tuple
 import logging
 import tensorflow_hub as hub
 from tensorflow.python.client import session as tf_session
+import numpy as np
+from SIF_embedding import SIF_embedding
 
 
 class MoralMatrix:
@@ -85,7 +87,29 @@ class MoralMatrix:
         moral_phrase_embeddings = pd.DataFrame(tokens).rename({0: "phrase"}, axis=1).set_index("phrase")
         moral_phrase_embeddings["embeddings"] = [embedding[:seq_lengths[i]] for i, embedding in enumerate(embeddings)]
 
+        # todo Reduce phrases to single vectors using https://openreview.net/forum?id=SyK00v5xx.
+        phrase_embeddings = self._embed_ngram_phrases(moral_phrase_embeddings.iloc[np.where(np.asarray(seq_lengths) > 1)])
+
+        exit()
+
         return pd.DataFrame().from_dict(morals_to_phrases).T, moral_phrase_embeddings
+
+    @staticmethod
+    def _embed_ngram_phrases(ngram_phrases: np.ndarray) -> np.ndarray:
+        """
+        Uses methodology introduced in https://openreview.net/forum?id=SyK00v5xx to embed n-gram phrases into sentences.
+        :param moral_phrase_embeddings:
+        :param seq_lengths:
+        :return:
+        """
+
+        words = set()
+        for ix, row in ngram_phrases.iterrows():
+            pass
+        print(ngram_phrases)
+        exit()
+
+        return None
 
     @staticmethod
     def _define_moral_matrix_weights() -> dict:
