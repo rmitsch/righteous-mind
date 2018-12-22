@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import json
 import logging
@@ -44,6 +46,7 @@ class Corpus:
             "here", "its", "im", "the", "in", "w", "you", "i", "u", "r", "b", "tbt", "ut", "ive", "wknd", "said"
         ))
 
+        # Load and preprocess data. Note that preprocessing steps only execute if they haven't been applied so far-
         self._users_df, self._tweets_df = self._load_data()
         self._users_df = self._associate_political_parties()
         # Note: Spelling correction does not seem necessary right now.
@@ -103,17 +106,46 @@ class Corpus:
                 lambda x: " ".join([item for item in x.split() if item not in STOP_WORDS and len(item) > 1])
             )
 
-            # Save update dataframe.
+            # Save updated dataframe.
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
-        
-    def _infer_elmo_embeddings_for_tweets(self):
+
+    def _infer_elmo_embeddings_for_tweets(self, batch_size: int = 200):
         """
         Infers ELMo embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
+        :param batch_size: Number of tweets to process simultaneously.
         :return:
         """
 
-        if "embeddings" not in self._tweets_df.columns:
-            self._logger.info("Inferring ELMo embeddings for moral dictionary.")
+        self._logger.info("Inferring ELMo embeddings for moral dictionary.")
+        # Get number of tokens in string.
+        if "embeddings" not in self._tweets_df:
+            self._tweets_df["num_words"] = self._tweets_df.clean_text.str.split().apply(len)
+            self._tweets_df["embeddings"] = None
+        processed_tweets_count = self._tweets_df.embeddings.count()
+
+        pbar = tqdm(total=math.ceil((len(self._tweets_df) - processed_tweets_count) / batch_size))
+        for i in range(self._tweets_df.embeddings.count(), len(self._tweets_df) + batch_size - 1, batch_size):
+            # Get current batch of tweets.
+            tweets = self._tweets_df.iloc[i:min(i + batch_size, len(self._tweets_df))]
+
+            # Infer embeddings.
+            embeddings = self._tf_session.run(
+                self._elmo(tweets.clean_text.values, signature="default", as_dict=True)["elmo"]
+            )
+
+            # Discard placeholder embedding values.
+            self._tweets_df.iloc[
+                i:min(i + batch_size, len(self._tweets_df)),
+                self._tweets_df.columns.get_loc('embeddings')
+            ] = [embedding[:seq_length] for embedding, seq_length in zip(embeddings, tweets.num_words)]
+
+            self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+            pbar.update(1)
+        pbar.close()
+
+        # Save updated dataframe.
+        self._tweets_df.drop("num_words", axis=1)
+        self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
     def _estimate_emotional_intensity(self):
         """
