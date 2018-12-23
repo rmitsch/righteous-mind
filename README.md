@@ -13,7 +13,10 @@ Approximation of a empirical verification of the moral-based framework to distui
     * Con: Apparently problem w/ handling OOV words.
 * BERT
     * Con: Resource requirements apparently exceed machine capability.
-    
+
+## Alternatives for MV classification with xgboost
+
+* Fine-tuning BERT
     
 ------
 

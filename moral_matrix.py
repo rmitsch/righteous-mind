@@ -3,6 +3,8 @@ Data and utilities related to the moral matrix weighting scheme introduced in TR
 """
 
 import os
+import pickle
+
 import pandas as pd
 from typing import Tuple
 import logging
@@ -14,6 +16,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.metrics import classification_report
 from sklearn.svm import SVC
 import xgboost as xgb
+from sklearn import preprocessing
 
 
 class MoralMatrix:
@@ -37,7 +40,7 @@ class MoralMatrix:
         # Note: Stored as pickle and generate only in case of pickle not being available.
         self._moral_matrix_weights = MoralMatrix._define_moral_matrix_weights()
         self._morals_to_phrases_df, self._phrase_embeddings = self._read_moral_dictionary(path_to_file)
-        self._train_moral_value_classifier()
+        self._mv_predictor = self._train_moral_value_classifier()
 
     def _train_moral_value_classifier(self):
         """
@@ -45,48 +48,40 @@ class MoralMatrix:
         :return: 
         """
 
-        # One-hot encode moral value affiliation for each phrase.
-        def is_in_moral_value(record, moral_value, morals_to_phrases_df):
-            key = record.name
-            return 1 if (
-                    key in morals_to_phrases_df.loc[moral_value].virtue or
-                    key in morals_to_phrases_df.loc[moral_value].vice
-            ) else 0
-
-        df = self._phrase_embeddings.copy(deep=True)
-        for moral_value in self._morals_to_phrases_df.index.values:
-            df[moral_value] = df.apply(
-                lambda record: is_in_moral_value(record, moral_value, self._morals_to_phrases_df), axis=1
-            )
+        mv_model_path = "data/mv_predictor.pkl"
+        mv_predictor = None
 
         # Build model predicting moral values for word.
-        df = df.sample(frac=1)
-        X = np.asarray([np.asarray(x) for x in df.embeddings.values])
+        if not os.path.isfile(mv_model_path):
+            df = self._phrase_embeddings
+            x = np.asarray([np.asarray(x) for x in df.embeddings.values])
+            le = preprocessing.LabelEncoder()
+            le.fit(self._morals_to_phrases_df.index.values)
+            y = le.transform(df.moral_values.values)
 
-        for moral_value in self._morals_to_phrases_df.index.values:
-            print(moral_value)
-            y = df[moral_value].values
-            data_dmatrix = xgb.DMatrix(data=X, label=y)
-
-            for train_index, test_index in StratifiedShuffleSplit(n_splits=1, test_size=0.4).split(X, y):
-                X_train, X_test = X[train_index], X[test_index]
+            self._logger.info("Training moral value predictor.")
+            for train_index, test_index in StratifiedShuffleSplit(n_splits=1, test_size=0.25).split(x, y):
+                x_train, x_test = x[train_index], x[test_index]
                 y_train, y_test = y[train_index], y[test_index]
 
-                xg_reg = xgb.XGBClassifier(
+                # todo improvements to MV predictor - dim. red.? HP tuning?
+                mv_predictor = xgb.XGBClassifier(
                     objective='binary:logistic',
-                    colsample_bytree=0.7,
-                    learning_rate=0.025,
-                    n_estimators=5000,
-                    n_jobs=4,
-                    nthread=4
+                    colsample_bytree=0.6,
+                    learning_rate=0.05,
+                    n_estimators=3000,
+                    n_jobs=0,
+                    nthread=0
                 )
-                xg_reg.fit(X_train, y_train)
-                y_pred = xg_reg.predict(X_test)
+                mv_predictor.fit(x_train, y_train)
+                pickle.dump(mv_predictor, open(mv_model_path, "wb"))
+                # y_pred = mv_predictor.predict(x_test)
+                # print(classification_report(y_test, y_pred, target_names=self._morals_to_phrases_df.index.values))
+        # Load built model.
+        else:
+            mv_predictor = pickle.load(mv_model_path)
 
-                # y_pred = RandomForestClassifier(n_estimators=100).fit(X_train, y_train).predict(X_test)
-
-                print(classification_report(y_test, y_pred, target_names=["is", "is_not"]))
-
+        return mv_predictor
 
     def _read_moral_dictionary(self, path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -115,17 +110,16 @@ class MoralMatrix:
                 morals_to_phrases[content_vals[0]][content_vals[1]] = set()
 
             # Sort words by moral value and polarity.
-            token_set = set()
             tokens = []
+            moral_values = []
             for line in lines[12:]:
                 vals = line.replace("\n", "").split("\t")
                 moral_info = moral_value_lookup[int(vals[1])]
                 morals_to_phrases[moral_info["value"]][moral_info["polarity"]].add(vals[0])
 
                 # Collect tokens for batch inference with ELMo.
-                if vals[0] not in token_set:
-                    token_set.add(vals[0])
-                    tokens.append(vals[0])
+                tokens.append(vals[0])
+                moral_values.append(moral_info["value"])
 
             self._logger.info("Inferring embeddings for moral dictionary.")
             bert_client = BertClient()
@@ -135,8 +129,10 @@ class MoralMatrix:
                 phrase_encodings.append(bert_client.encode([token])[0])
                 pbar.update(1)
             pbar.close()
+
             moral_phrase_embeddings_df = pd.DataFrame(tokens).rename({0: "phrase"}, axis=1).set_index("phrase")
             moral_phrase_embeddings_df["embeddings"] = phrase_encodings
+            moral_phrase_embeddings_df["moral_values"] = moral_values
 
             # Save encodings.
             morals_to_phrases_df = pd.DataFrame().from_dict(morals_to_phrases).T
