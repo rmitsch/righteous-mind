@@ -1,15 +1,19 @@
 """
 Data and utilities related to the moral matrix weighting scheme introduced in TRM.
 """
-import os
 
+import os
 import pandas as pd
 from typing import Tuple
 import logging
-import tensorflow_hub as hub
-from tensorflow.python.client import session as tf_session
 import numpy as np
-from SIF_embedding import SIF_embedding
+from tqdm import tqdm
+from bert_serving.client import BertClient
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.metrics import classification_report
+from sklearn.svm import SVC
+import xgboost as xgb
 
 
 class MoralMatrix:
@@ -20,31 +24,69 @@ class MoralMatrix:
         - V1: https://www.moralfoundations.org/othermaterials
     """
 
-    def __init__(self, path_to_file: str, elmo: hub.Module, tf_session: tf_session.Session, logger: logging.Logger):
+    def __init__(self, path_to_file: str, logger: logging.Logger):
         """
         Initializes moral matrix value data.
         :param path_to_file: Path to .dic file with terms per moral value.
-        :param elmo: TF ELMo module.
-        :param tf_session: TF session to use for inference tensors.
         """
         logger.info("Initializing moral matrix.")
 
         self._logger = logger
-        self._elmo = elmo
-        self._tf_session = tf_session
 
         # Define moral value weighting; read and process moral dictionary.
         # Note: Stored as pickle and generate only in case of pickle not being available.
         self._moral_matrix_weights = MoralMatrix._define_moral_matrix_weights()
-        morals_to_phrases_path = "data/morals-to-phrases.pkl"
-        phrase_embeddings_path = "data/phrase-embeddings.pkl"
-        if not os.path.isfile(morals_to_phrases_path) or not os.path.isfile(phrase_embeddings_path):
-            self._morals_to_phrases_df, self._phrase_embeddings = self._read_moral_dictionary(path_to_file)
-            self._morals_to_phrases_df.to_pickle(path=morals_to_phrases_path)
-            self._phrase_embeddings.to_pickle(path=phrase_embeddings_path)
-        else:
-            self._morals_to_phrases_df = pd.read_pickle(path=morals_to_phrases_path)
-            self._phrase_embeddings = pd.read_pickle(path=phrase_embeddings_path)
+        self._morals_to_phrases_df, self._phrase_embeddings = self._read_moral_dictionary(path_to_file)
+        self._train_moral_value_classifier()
+
+    def _train_moral_value_classifier(self):
+        """
+        Trains model classifying phrases into sentiments.
+        :return: 
+        """
+
+        # One-hot encode moral value affiliation for each phrase.
+        def is_in_moral_value(record, moral_value, morals_to_phrases_df):
+            key = record.name
+            return 1 if (
+                    key in morals_to_phrases_df.loc[moral_value].virtue or
+                    key in morals_to_phrases_df.loc[moral_value].vice
+            ) else 0
+
+        df = self._phrase_embeddings.copy(deep=True)
+        for moral_value in self._morals_to_phrases_df.index.values:
+            df[moral_value] = df.apply(
+                lambda record: is_in_moral_value(record, moral_value, self._morals_to_phrases_df), axis=1
+            )
+
+        # Build model predicting moral values for word.
+        df = df.sample(frac=1)
+        X = np.asarray([np.asarray(x) for x in df.embeddings.values])
+
+        for moral_value in self._morals_to_phrases_df.index.values:
+            print(moral_value)
+            y = df[moral_value].values
+            data_dmatrix = xgb.DMatrix(data=X, label=y)
+
+            for train_index, test_index in StratifiedShuffleSplit(n_splits=1, test_size=0.4).split(X, y):
+                X_train, X_test = X[train_index], X[test_index]
+                y_train, y_test = y[train_index], y[test_index]
+
+                xg_reg = xgb.XGBClassifier(
+                    objective='binary:logistic',
+                    colsample_bytree=0.7,
+                    learning_rate=0.025,
+                    n_estimators=5000,
+                    n_jobs=4,
+                    nthread=4
+                )
+                xg_reg.fit(X_train, y_train)
+                y_pred = xg_reg.predict(X_test)
+
+                # y_pred = RandomForestClassifier(n_estimators=100).fit(X_train, y_train).predict(X_test)
+
+                print(classification_report(y_test, y_pred, target_names=["is", "is_not"]))
+
 
     def _read_moral_dictionary(self, path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -52,64 +94,60 @@ class MoralMatrix:
         :param path: Path to dictionary file.
         :return: (1) Dataframe with morals-to-phrase mapping, (2) dataframe with phrase embedding.
         """
-        dict_file = open(path, 'r')
-        lines = dict_file.readlines()
-        morals_to_phrases = {}
+        morals_to_phrases_path = "data/morals-to-phrases.pkl"
+        phrase_embeddings_path = "data/phrase-embeddings.pkl"
 
-        # Get index -> value/polarity association in dict file.
-        moral_value_lookup = {}
-        for line in lines[1:11]:
-            vals = line.replace("\n", "").split("\t")
-            content_vals = vals[1].split(".")
-            moral_value_lookup[int(vals[0])] = {"value": content_vals[0], "polarity": content_vals[1]}
+        # Create if files not available, otherwise read from file.
+        if not os.path.isfile(morals_to_phrases_path) or not os.path.isfile(phrase_embeddings_path):
+            dict_file = open(path, 'r')
+            lines = dict_file.readlines()
+            morals_to_phrases = {}
 
-            if content_vals[0] not in morals_to_phrases:
-                morals_to_phrases[content_vals[0]] = {}
-            morals_to_phrases[content_vals[0]][content_vals[1]] = set()
+            # Get index -> value/polarity association in dict file.
+            moral_value_lookup = {}
+            for line in lines[1:11]:
+                vals = line.replace("\n", "").split("\t")
+                content_vals = vals[1].split(".")
+                moral_value_lookup[int(vals[0])] = {"value": content_vals[0], "polarity": content_vals[1]}
 
-        # Sort words by moral value and polarity.
-        token_set = set()
-        tokens = []
-        seq_lengths = []
-        for line in lines[12:]:
-            vals = line.replace("\n", "").split("\t")
-            moral_info = moral_value_lookup[int(vals[1])]
-            morals_to_phrases[moral_info["value"]][moral_info["polarity"]].add(vals[0])
+                if content_vals[0] not in morals_to_phrases:
+                    morals_to_phrases[content_vals[0]] = {}
+                morals_to_phrases[content_vals[0]][content_vals[1]] = set()
 
-            # Collect tokens for batch inference with ELMo.
-            if vals[0] not in token_set:
-                token_set.add(vals[0])
-                tokens.append(vals[0])
-                seq_lengths.append(len(vals[0].split()))
+            # Sort words by moral value and polarity.
+            token_set = set()
+            tokens = []
+            for line in lines[12:]:
+                vals = line.replace("\n", "").split("\t")
+                moral_info = moral_value_lookup[int(vals[1])]
+                morals_to_phrases[moral_info["value"]][moral_info["polarity"]].add(vals[0])
 
-        self._logger.info("Inferring ELMo embeddings for moral dictionary.")
-        embeddings = self._tf_session.run(self._elmo(tokens, signature="default", as_dict=True)["elmo"])
-        moral_phrase_embeddings = pd.DataFrame(tokens).rename({0: "phrase"}, axis=1).set_index("phrase")
-        moral_phrase_embeddings["embeddings"] = [embedding[:seq_lengths[i]] for i, embedding in enumerate(embeddings)]
+                # Collect tokens for batch inference with ELMo.
+                if vals[0] not in token_set:
+                    token_set.add(vals[0])
+                    tokens.append(vals[0])
 
-        # todo Reduce phrases to single vectors using https://openreview.net/forum?id=SyK00v5xx.
-        phrase_embeddings = self._embed_ngram_phrases(moral_phrase_embeddings.iloc[np.where(np.asarray(seq_lengths) > 1)])
+            self._logger.info("Inferring embeddings for moral dictionary.")
+            bert_client = BertClient()
+            pbar = tqdm(total=len(tokens))
+            phrase_encodings = []
+            for token in tokens:
+                phrase_encodings.append(bert_client.encode([token])[0])
+                pbar.update(1)
+            pbar.close()
+            moral_phrase_embeddings_df = pd.DataFrame(tokens).rename({0: "phrase"}, axis=1).set_index("phrase")
+            moral_phrase_embeddings_df["embeddings"] = phrase_encodings
 
-        exit()
+            # Save encodings.
+            morals_to_phrases_df = pd.DataFrame().from_dict(morals_to_phrases).T
+            morals_to_phrases_df.to_pickle(path=morals_to_phrases_path)
+            moral_phrase_embeddings_df.to_pickle(path=phrase_embeddings_path)
 
-        return pd.DataFrame().from_dict(morals_to_phrases).T, moral_phrase_embeddings
+        else:
+            morals_to_phrases_df = pd.read_pickle(path=morals_to_phrases_path)
+            moral_phrase_embeddings_df = pd.read_pickle(path=phrase_embeddings_path)
 
-    @staticmethod
-    def _embed_ngram_phrases(ngram_phrases: np.ndarray) -> np.ndarray:
-        """
-        Uses methodology introduced in https://openreview.net/forum?id=SyK00v5xx to embed n-gram phrases into sentences.
-        :param moral_phrase_embeddings:
-        :param seq_lengths:
-        :return:
-        """
-
-        words = set()
-        for ix, row in ngram_phrases.iterrows():
-            pass
-        print(ngram_phrases)
-        exit()
-
-        return None
+        return morals_to_phrases_df, moral_phrase_embeddings_df
 
     @staticmethod
     def _define_moral_matrix_weights() -> dict:

@@ -10,8 +10,6 @@ import time
 from symspellpy.symspellpy import SymSpell, Verbosity
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from tqdm import tqdm
-import tensorflow_hub as hub
-from tensorflow.python.client import session as tf_session
 import wordsegment
 from spacy.lang.en.stop_words import STOP_WORDS
 
@@ -29,7 +27,7 @@ class Corpus:
         "suggestion_verbosity": Verbosity.CLOSEST
     }
 
-    def __init__(self, user_path: str, tweets_path: str, elmo: hub.Module, tf_session: tf_session.Session, logger: logging.Logger):
+    def __init__(self, user_path: str, tweets_path: str, logger: logging.Logger):
         """
         Initializes corpus by loading data.
         :param user_path:
@@ -39,8 +37,6 @@ class Corpus:
         self._logger = logger
         self._user_path = user_path
         self._tweets_path = tweets_path
-        self._elmo = elmo
-        self._tf_session = tf_session
         self._stop_words = STOP_WORDS
         self._stop_words.update((
             "here", "its", "im", "the", "in", "w", "you", "i", "u", "r", "b", "tbt", "ut", "ive", "wknd", "said"
@@ -53,7 +49,7 @@ class Corpus:
         # self._tweets_df = self._correct_spelling_errors()
         self._estimate_emotional_intensity()
         self._clean_tweets()
-        self._infer_elmo_embeddings_for_tweets()
+        self._infer_embeddings_for_tweets()
 
     @staticmethod
     def _transform_hashtags_to_words(text: str) -> str:
@@ -109,9 +105,9 @@ class Corpus:
             # Save updated dataframe.
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
-    def _infer_elmo_embeddings_for_tweets(self, batch_size: int = 200):
+    def _infer_embeddings_for_tweets(self, batch_size: int = 200):
         """
-        Infers ELMo embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
+        Infers embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
         :param batch_size: Number of tweets to process simultaneously.
         :return:
         """
@@ -121,7 +117,7 @@ class Corpus:
         #   - check if exact words match before cleaning; compare phrases afterwards (cumbersome)
         #   - average embedding for words in moral phrase
 
-        self._logger.info("Inferring ELMo embeddings for moral dictionary.")
+        self._logger.info("Inferring embeddings for corpus.")
         # Prepare dataframe if this is the first inference run.
         if "embeddings" not in self._tweets_df:
             self._tweets_df["num_words"] = self._tweets_df.clean_text.str.split().apply(len)
@@ -133,6 +129,8 @@ class Corpus:
             # Get current batch of tweets.
             tweets = self._tweets_df.iloc[i:min(i + batch_size, len(self._tweets_df))]
 
+
+            # todo use BERT instead off ELMo for inference.
             # Infer embeddings.
             embeddings = self._tf_session.run(
                 self._elmo(tweets.clean_text.values, signature="default", as_dict=True)["elmo"]
