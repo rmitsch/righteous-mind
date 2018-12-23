@@ -130,29 +130,35 @@ class Corpus:
                 "description", "favourites_count", "friends_count", "id_str", "location", "name", "mv_scores",
                 "num_tweets", "num_words", "screen_name", "party"
             ]]
+        processed_tweets_count = max(0, self._tweets_df.embeddings.count() - 5)
 
-        processed_tweets_count = self._tweets_df.embeddings.count()
+        # Process tweets.
+        # Note: Performance can be improved with batch processing (i. e. multiple tweets at once).
+        pbar = tqdm(total=len(self._tweets_df))
+        pbar.n = processed_tweets_count
+        pbar.refresh()
 
-        pbar = tqdm(total=(len(self._tweets_df) - processed_tweets_count))
-        for i in range(self._tweets_df.embeddings.count(), len(self._tweets_df)):
+        for i in range(processed_tweets_count, len(self._tweets_df)):
             tweet = self._tweets_df.iloc[i]
+            num_words_in_tweet = len(tweet.clean_text.split()) if tweet.clean_text != "" else 0
 
-            # Infer embeddings for each token in this tweet.
-            self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('embeddings')] = np.asarray([
-                bert_client.encode([tweet.clean_text])[0][1:1 + len(tweet.clean_text.split())]
-            ])
+            if num_words_in_tweet > 0:
+                # Infer embeddings for each token in this tweet.
+                self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('embeddings')] = np.asarray([
+                    bert_client.encode([tweet.clean_text])[0][1:num_words_in_tweet + 1]
+                ])
 
-            # Get probabilities for moral values, update statistics.
-            self._users_df.at[tweet.user_id, "mv_scores"] = self._users_df.at[tweet.user_id, "mv_scores"] + np.sum(
-                self._moral_matrix.predict_mv_probabilities(self._tweets_df.iloc[i].embeddings), axis=0
-            )
-            self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
-            self._users_df.at[tweet.user_id, "num_words"] = \
-                self._users_df.at[tweet.user_id, "num_words"] + len(tweet.clean_text.split())
+                # Get probabilities for moral values, update statistics.
+                self._users_df.at[tweet.user_id, "mv_scores"] = self._users_df.at[tweet.user_id, "mv_scores"] + np.sum(
+                    self._moral_matrix.predict_mv_probabilities(self._tweets_df.iloc[i].embeddings), axis=0
+                )
+                self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
+                self._users_df.at[tweet.user_id, "num_words"] = \
+                    self._users_df.at[tweet.user_id, "num_words"] + num_words_in_tweet
 
-            if i % 100 == 0 and i > 0:
-                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
-                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
+                if i % 100 == 0 and i > 0:
+                    self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+                    self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
             pbar.update(1)
         pbar.close()
 
