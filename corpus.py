@@ -53,7 +53,7 @@ class Corpus:
         # self._tweets_df = self._correct_spelling_errors()
         self._estimate_emotional_intensity()
         self._clean_tweets()
-        self._infer_embeddings_for_tweets()
+        self._estimate_moral_value_relevance_for_tweets()
 
     @staticmethod
     def _transform_hashtags_to_words(text: str) -> str:
@@ -109,12 +109,14 @@ class Corpus:
             # Save updated dataframe.
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
-    def _infer_embeddings_for_tweets(self):
+    def _estimate_moral_value_relevance_for_tweets(self):
         """
-        Infers embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
+        Estimates relevance of moral value for all tweets by inferring embeddings for tweets and using pre-trained model
+        for predictions.
+        Updates tweets dataframe and stores updated version on disk.
         :return:
         """
-        self._logger.info("Inferring embeddings for corpus.")
+        self._logger.info("Inferring embeddings and estimating relevance of moral values for tweets.")
         bert_client = BertClient()
 
         # Prepare dataframes if this is the first inference run.
@@ -140,13 +142,13 @@ class Corpus:
                 bert_client.encode([tweet.clean_text])[0][1:1 + len(tweet.clean_text.split())]
             ])
 
-            # Get probabilities for moral values.
-            self._users_df.at[tweet.user_id, "mv_scores"] = \
-                self._users_df.at[tweet.user_id, "mv_scores"] + \
-                self._moral_matrix.predict_mv_probabilities(self._tweets_df.iloc[i].embeddings)
+            # Get probabilities for moral values, update statistics.
+            self._users_df.at[tweet.user_id, "mv_scores"] = self._users_df.at[tweet.user_id, "mv_scores"] + np.sum(
+                self._moral_matrix.predict_mv_probabilities(self._tweets_df.iloc[i].embeddings), axis=0
+            )
             self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
             self._users_df.at[tweet.user_id, "num_words"] = \
-                self._users_df.at[tweet.user_id, "num_words"] + len(tweet.clean_text)
+                self._users_df.at[tweet.user_id, "num_words"] + len(tweet.clean_text.split())
 
             if i % 100 == 0 and i > 0:
                 self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
