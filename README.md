@@ -17,6 +17,10 @@ Approximation of a empirical verification of the moral-based framework to distui
 ## Alternatives for MV classification with xgboost
 
 * Fine-tuning BERT
+
+## Alternatives for Party Classification
+
+* Taking emotional intensity into account.
     
 ------
 
@@ -28,7 +32,7 @@ Starting BERT server for moral matrix (i. e. we want one embedding vector for th
  
 Starting BERT server for tweets (i. e. we want one embedding vector per token): 
 
-```bert-serving-start -model_dir ~/Development/data/BERT/base/ -num_worker=1 -cpu -pooling_strategy NONE``` 
+```bert-serving-start -model_dir ~/Development/data/BERT/base/ -num_worker=1 -cpu -max_seq_len=40 -pooling_strategy NONE``` 
 
 ----
 

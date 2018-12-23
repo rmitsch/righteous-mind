@@ -1,5 +1,3 @@
-import math
-
 import pandas as pd
 import json
 import logging
@@ -7,11 +5,15 @@ from typing import Tuple
 import requests
 import bs4
 import time
+import numpy as np
+from bert_serving.client import BertClient
 from symspellpy.symspellpy import SymSpell, Verbosity
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from tqdm import tqdm
 import wordsegment
 from spacy.lang.en.stop_words import STOP_WORDS
+
+from moral_matrix import MoralMatrix
 
 
 class Corpus:
@@ -27,14 +29,16 @@ class Corpus:
         "suggestion_verbosity": Verbosity.CLOSEST
     }
 
-    def __init__(self, user_path: str, tweets_path: str, logger: logging.Logger):
+    def __init__(self, user_path: str, tweets_path: str, moral_matrix: MoralMatrix, logger: logging.Logger):
         """
         Initializes corpus by loading data.
         :param user_path:
         :param tweets_path:
+        :param moral_matrix:
         :param logger:
         """
         self._logger = logger
+        self._moral_matrix = moral_matrix
         self._user_path = user_path
         self._tweets_path = tweets_path
         self._stop_words = STOP_WORDS
@@ -105,44 +109,48 @@ class Corpus:
             # Save updated dataframe.
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
-    def _infer_embeddings_for_tweets(self, batch_size: int = 200):
+    def _infer_embeddings_for_tweets(self):
         """
         Infers embeddings for tweets. Updates tweets dataframe and stores updated version on disk.
-        :param batch_size: Number of tweets to process simultaneously.
         :return:
         """
-
-        # multiple words in moral dict.:
-        #   - sentence embeddings
-        #   - check if exact words match before cleaning; compare phrases afterwards (cumbersome)
-        #   - average embedding for words in moral phrase
-
         self._logger.info("Inferring embeddings for corpus.")
-        # Prepare dataframe if this is the first inference run.
+        bert_client = BertClient()
+
+        # Prepare dataframes if this is the first inference run.
         if "embeddings" not in self._tweets_df:
             self._tweets_df["num_words"] = self._tweets_df.clean_text.str.split().apply(len)
             self._tweets_df["embeddings"] = None
+            self._users_df["mv_scores"] = [np.asarray([0] * len(self._moral_matrix.get_moral_values()))] * len(self._users_df)
+            self._users_df["num_tweets"] = 0
+            self._users_df["num_words"] = 0
+            self._users_df = self._users_df.set_index("id")[[
+                "description", "favourites_count", "friends_count", "id_str", "location", "name", "mv_scores",
+                "num_tweets", "num_words", "screen_name", "party"
+            ]]
+
         processed_tweets_count = self._tweets_df.embeddings.count()
 
-        pbar = tqdm(total=math.ceil((len(self._tweets_df) - processed_tweets_count) / batch_size))
-        for i in range(self._tweets_df.embeddings.count(), len(self._tweets_df) + batch_size - 1, batch_size):
-            # Get current batch of tweets.
-            tweets = self._tweets_df.iloc[i:min(i + batch_size, len(self._tweets_df))]
+        pbar = tqdm(total=(len(self._tweets_df) - processed_tweets_count))
+        for i in range(self._tweets_df.embeddings.count(), len(self._tweets_df)):
+            tweet = self._tweets_df.iloc[i]
 
+            # Infer embeddings for each token in this tweet.
+            self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('embeddings')] = np.asarray([
+                bert_client.encode([tweet.clean_text])[0][1:1 + len(tweet.clean_text.split())]
+            ])
 
-            # todo use BERT instead off ELMo for inference.
-            # Infer embeddings.
-            embeddings = self._tf_session.run(
-                self._elmo(tweets.clean_text.values, signature="default", as_dict=True)["elmo"]
-            )
+            # Get probabilities for moral values.
+            self._users_df.at[tweet.user_id, "mv_scores"] = \
+                self._users_df.at[tweet.user_id, "mv_scores"] + \
+                self._moral_matrix.predict_mv_probabilities(self._tweets_df.iloc[i].embeddings)
+            self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
+            self._users_df.at[tweet.user_id, "num_words"] = \
+                self._users_df.at[tweet.user_id, "num_words"] + len(tweet.clean_text)
 
-            # Discard placeholder embedding values.
-            self._tweets_df.iloc[
-                i:min(i + batch_size, len(self._tweets_df)),
-                self._tweets_df.columns.get_loc('embeddings')
-            ] = [embedding[:seq_length] for embedding, seq_length in zip(embeddings, tweets.num_words)]
-
-            self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+            if i % 100 == 0 and i > 0:
+                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
             pbar.update(1)
         pbar.close()
 

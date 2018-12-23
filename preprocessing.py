@@ -22,4 +22,4 @@ if __name__ == '__main__':
 
     # Prepare corpus and moral value matrix.
     moral_matrix = MoralMatrix(args.moral_dictionary_path, logger)
-    # corpus = Corpus(args.users_path, args.tweets_path, elmo, tf_session, logger)
+    corpus = Corpus(args.users_path, args.tweets_path, moral_matrix, logger)

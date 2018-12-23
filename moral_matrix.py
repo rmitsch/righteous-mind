@@ -11,10 +11,8 @@ import logging
 import numpy as np
 from tqdm import tqdm
 from bert_serving.client import BertClient
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.metrics import classification_report
-from sklearn.svm import SVC
 import xgboost as xgb
 from sklearn import preprocessing
 
@@ -67,19 +65,20 @@ class MoralMatrix:
                 # todo improvements to MV predictor - dim. red.? HP tuning?
                 mv_predictor = xgb.XGBClassifier(
                     objective='binary:logistic',
-                    colsample_bytree=0.6,
+                    colsample_bytree=0.7,
                     learning_rate=0.05,
                     n_estimators=3000,
                     n_jobs=0,
                     nthread=0
                 )
+
                 mv_predictor.fit(x_train, y_train)
                 pickle.dump(mv_predictor, open(mv_model_path, "wb"))
                 # y_pred = mv_predictor.predict(x_test)
                 # print(classification_report(y_test, y_pred, target_names=self._morals_to_phrases_df.index.values))
         # Load built model.
         else:
-            mv_predictor = pickle.load(mv_model_path)
+            mv_predictor = pd.read_pickle(path=mv_model_path)
 
         return mv_predictor
 
@@ -186,3 +185,14 @@ class MoralMatrix:
 
         return moral_matrix_weights
 
+    def predict_mv_probabilities(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        Predicts probabilities for affiliation with defined moral values.
+        :param embeddings:
+        :return: Matrix with probabilities for affiliation with moral values for each embedding vector.
+        """
+
+        return self._mv_predictor.predict_proba(np.asarray([emb for emb in embeddings]))
+
+    def get_moral_values(self):
+        return self._morals_to_phrases_df.index.values
