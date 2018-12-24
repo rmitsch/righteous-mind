@@ -130,7 +130,7 @@ class Corpus:
         for file in os.listdir(embedding_dir):
             filename = os.fsdecode(file)
             if filename.endswith(".pkl"):
-                processed_tweets_count = int(filename[:-4].split("-")[1])
+                processed_tweets_count = max(int(filename[:-4].split("-")[1]) + 1, processed_tweets_count)
 
         # Prepare dataframes if this is the first inference run.
         # todo post _estimate_moral_value_relevance_for_tweets: add check if tweets have no users, remove tweets (necessary?).
@@ -174,7 +174,7 @@ class Corpus:
             self._users_df.at[tweet.user_id, "num_words"] = \
                 self._users_df.at[tweet.user_id, "num_words"] + num_words_in_tweet
 
-            if i % saving_interval == 0 and i > 0:
+            if (i + 1) % saving_interval == 0 and i > processed_tweets_count:
                 pickle.dump(
                     tweet_embeddings,
                     open(
