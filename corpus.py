@@ -57,7 +57,7 @@ class Corpus:
         # self._tweets_df = self._correct_spelling_errors()
         self._estimate_emotional_intensity()
         self._clean_tweets()
-        self._infer_tweet_embeddings()
+        self._predict_moral_relevance()
 
     @staticmethod
     def _transform_hashtags_to_words(text: str) -> str:
@@ -201,7 +201,6 @@ class Corpus:
         self._logger.info("Inferring embeddings and estimating relevance of moral values for tweets.")
         bert_client = BertClient()
         # use only if start DF still has embeddings column
-        # self._tweets_df["processed"] = self._tweets_df.embeddings.apply(lambda x: x is not None)
         self._tweets_df = self._tweets_df.drop(["text", "embeddings"], axis=1, errors="ignore")
 
         # Prepare dataframes if this is the first inference run.
@@ -228,37 +227,38 @@ class Corpus:
         for i in range(processed_tweets_count, len(self._tweets_df)):
             tweet = self._tweets_df.iloc[i]
             num_words_in_tweet = len(tweet.clean_text.split()) if tweet.clean_text != "" else 0
+            pbar.update(1)
 
             if tweet.user_id not in user_id_set:
                 self._logger.info("User ID " + str(tweet.user_id) + " not found for tweet #" + str(i))
                 self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('processed')] = True
-                pbar.update(1)
                 continue
 
-            if num_words_in_tweet > 0:
-                # Infer embeddings for each token in this tweet.
-                embeddings = bert_client.encode([tweet.clean_text])[0][1:num_words_in_tweet + 1]
+            if num_words_in_tweet == 0:
+                continue
 
-                # Get probabilities for moral values, update statistics.
-                self._users_df.at[tweet.user_id, "mv_scores"] = self._users_df.at[tweet.user_id, "mv_scores"] + np.sum(
-                    self._moral_matrix.predict_mv_probabilities(embeddings), axis=0
-                )
-                self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
-                self._users_df.at[tweet.user_id, "num_words"] = \
-                    self._users_df.at[tweet.user_id, "num_words"] + num_words_in_tweet
-                self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('processed')] = True
+            # Infer embeddings for each token in this tweet.
+            embeddings = bert_client.encode([tweet.clean_text])[0][1:num_words_in_tweet + 1]
 
-                if i % 1000 == 0 and i > 0:
-                    self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
-                    self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
-                if i % 2000 == 0 and i > 0:
-                    self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + "_2000.pkl")
-                    self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + "_2000.pkl")
-                if i % 3000 == 0 and i > 0:
-                    self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + "_3000.pkl")
-                    self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + "_3000.pkl")
+            # Get probabilities for moral values, update statistics.
+            self._users_df.at[tweet.user_id, "mv_scores"] = self._users_df.at[tweet.user_id, "mv_scores"] + np.sum(
+                self._moral_matrix.predict_mv_probabilities(embeddings), axis=0
+            )
+            self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
+            self._users_df.at[tweet.user_id, "num_words"] = \
+                self._users_df.at[tweet.user_id, "num_words"] + num_words_in_tweet
+            self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('processed')] = True
 
-            pbar.update(1)
+            if i % 1000 == 0 and i > 0:
+                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
+                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
+            if i % 2000 == 0 and i > 0:
+                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + "_2000.pkl")
+                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + "_2000.pkl")
+            if i % 3000 == 0 and i > 0:
+                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + "_3000.pkl")
+                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + "_3000.pkl")
+                
         pbar.close()
 
         # Save updated dataframe.

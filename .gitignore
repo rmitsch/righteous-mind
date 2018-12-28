@@ -110,3 +110,4 @@ log.txt
 /data
 !/data/*.dic
 !/data/frequency_dictionary_en_82_765.txt
+*.out

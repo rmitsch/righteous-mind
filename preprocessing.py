@@ -1,17 +1,3 @@
-# todo
-#   - test dataflow
-
-"""
-Workflow after preprocessing:
-    - Apply guided topic modeling.
-    - Go through tweets for each person, sum up relevance of topics/moral values. Consider strength of topic AND
-      emotional intensity.
-    - Evaluation whether separation can be achieved.
-        - Possible: Use sentence embeddings, average tweeter's coordinates, reduce to map.
-          Can be seen as alternative approach - more classic one would be n-grams. For both: We would only do that to
-          compare with moral framework approach (which has a more direct theoretical footing).
-"""
-
 import utils
 from corpus import Corpus
 from moral_matrix import MoralMatrix
