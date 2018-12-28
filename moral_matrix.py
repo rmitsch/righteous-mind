@@ -15,6 +15,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.metrics import classification_report
 import xgboost as xgb
 from sklearn import preprocessing
+from sklearn.metrics import roc_auc_score
 
 
 class MoralMatrix:
@@ -40,6 +41,49 @@ class MoralMatrix:
         self._morals_to_phrases_df, self._phrase_embeddings = self._read_moral_dictionary(path_to_file)
         self._mv_predictor = self._train_moral_value_classifier()
 
+
+    def _cross_validate_moral_value_classifier(self):
+        """
+        Cross-validates moral value classifier.
+        :return:
+        """
+
+        df = self._phrase_embeddings
+        x = np.asarray([np.asarray(x) for x in df.embeddings.values])
+        le = preprocessing.LabelEncoder()
+        le.fit(self._morals_to_phrases_df.index.values)
+        y = le.transform(df.moral_values.values)
+
+        X_sel = x
+        print(y)
+        xgtrain = xgb.DMatrix(X_sel, label=y)
+
+        clf = xgb.XGBClassifier(
+            objective='multi:softmax',
+            n_classes=5,
+            colsample_bytree=0.7,
+            learning_rate=0.05,
+            n_estimators=1000,
+            n_jobs=0,
+            nthread=0
+        )
+
+        cvresult = xgb.cv(
+            clf.get_xgb_params(),
+            xgtrain,
+            num_boost_round=5000,
+            nfold=5,
+            metrics=["auc"],
+            early_stopping_rounds=50,
+            stratified=True
+        )
+
+        print('Best number of trees = {}'.format(cvresult.shape[0]))
+        clf.set_params(n_estimators=cvresult.shape[0])
+        print('Fit on the trainingsdata')
+        clf.fit(X_sel, y, eval_metric='auc')
+        print('Overall AUC:', roc_auc_score(y, clf.predict_proba(X_sel)[:, 1]))
+
     def _train_moral_value_classifier(self):
         """
         Trains model classifying phrases into sentiments.
@@ -62,7 +106,6 @@ class MoralMatrix:
                 x_train, x_test = x[train_index], x[test_index]
                 y_train, y_test = y[train_index], y[test_index]
 
-                # todo improvements to MV predictor - dim. red.? HP tuning?
                 mv_predictor = xgb.XGBClassifier(
                     objective='binary:logistic',
                     colsample_bytree=0.7,
@@ -76,6 +119,7 @@ class MoralMatrix:
                 pickle.dump(mv_predictor, open(mv_model_path, "wb"))
                 # y_pred = mv_predictor.predict(x_test)
                 # print(classification_report(y_test, y_pred, target_names=self._morals_to_phrases_df.index.values))
+
         # Load built model.
         else:
             mv_predictor = pd.read_pickle(path=mv_model_path)

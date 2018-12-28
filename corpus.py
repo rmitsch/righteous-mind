@@ -1,4 +1,3 @@
-import csv
 import os
 import pickle
 
@@ -16,8 +15,16 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from tqdm import tqdm
 import wordsegment
 from spacy.lang.en.stop_words import STOP_WORDS
-
+from sklearn import preprocessing
+import xgboost as xgb
+from sklearn.metrics import classification_report, f1_score, roc_curve, auc, precision_recall_curve
 from moral_matrix import MoralMatrix
+from sklearn.model_selection import StratifiedShuffleSplit, RandomizedSearchCV, KFold
+import matplotlib.pyplot as plt
+from sklearn.utils.fixes import signature
+from sklearn.metrics import average_precision_score
+from sklearn.preprocessing import label_binarize
+import utils
 
 
 class Corpus:
@@ -53,11 +60,62 @@ class Corpus:
         # Load and preprocess data. Note that preprocessing steps only execute if they haven't been applied so far-
         self._users_df, self._tweets_df = self._load_data()
         self._users_df = self._associate_political_parties()
-        # Note: Spelling correction does not seem necessary right now.
-        # self._tweets_df = self._correct_spelling_errors()
         self._estimate_emotional_intensity()
         self._clean_tweets()
         self._predict_moral_relevance()
+        self._train_party_classifier()
+
+    def _train_party_classifier(self):
+        """
+        Trains classifier learning to predict political party from moral relevance weight vectors.
+        :return:
+        """
+
+        pp_model_path = "data/party_predictor.pkl"
+        pp_predictor = None
+
+        # Build model predicting moral values for word.
+        if True or not os.path.isfile(pp_model_path):
+            df = self._users_df.sample(frac=1)
+            df.mv_scores = df.mv_scores.values / df.num_words.values
+            df.loc[df.party == "Libertarians", "party"] = "Republican Party"
+            class_names = ["Republican Party", "Democratic Party"]
+
+            x = np.asarray([np.asarray(x) for x in df.mv_scores.values])
+            le = preprocessing.LabelEncoder()
+            le.fit(class_names)
+            y = le.transform(df.party.values)
+
+            for train_index, test_index in StratifiedShuffleSplit(n_splits=1, test_size=0.5).split(x, y):
+                x_train, x_test = x[train_index], x[test_index]
+                y_train, y_test = y[train_index], y[test_index]
+
+                pp_predictor = xgb.XGBClassifier(
+                    objective='binary:logistic',
+                    colsample_bytree=0.7,
+                    learning_rate=0.05,
+                    n_estimators=6000,
+                    n_jobs=0,
+                    nthread=0
+                )
+                pp_predictor.fit(x_train, y_train)
+                pickle.dump(pp_predictor, open(pp_model_path, "wb"))
+
+                y_pred = pp_predictor.predict(x_test)
+                print(classification_report(y_test, y_pred, target_names=class_names))
+                utils.plot_precision_recall_curve(y_test, y_pred)
+                utils.plot_roc_curve(y_test, y_pred, 2)
+                utils.plot_confusion_matrix(
+                    y_test, y_pred, ["Republican Party", "Democratic Party"], title="Confusion Matrix"
+                )
+                # scores = cross_val_score(pp_predictor, x, y, cv=20, scoring='f1_macro')
+                # print("Accuracy: %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
+
+        # Load built model.
+        else:
+            pp_predictor = pd.read_pickle(path=pp_model_path)
+
+        return pp_predictor
 
     @staticmethod
     def _transform_hashtags_to_words(text: str) -> str:
