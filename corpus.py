@@ -113,84 +113,6 @@ class Corpus:
             # Save updated dataframe.
             self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
 
-    def _infer_tweet_embeddings(self):
-        """
-        Estimates relevance of moral value for all tweets by inferring embeddings for tweets and using pre-trained model
-        for predictions.
-        Creates/updates file with embeddings.
-        :return:
-        """
-        self._logger.info("Inferring embeddings and estimating relevance of moral values for tweets.")
-        bert_client = BertClient()
-        user_id_set = set(self._users_df.index.values)
-        processed_tweets_count = 0
-        saving_interval = 1000
-        embedding_dir = "data/tweet-embeddings/"
-
-        for file in os.listdir(embedding_dir):
-            filename = os.fsdecode(file)
-            if filename.endswith(".pkl"):
-                processed_tweets_count = max(int(filename[:-4].split("-")[1]) + 1, processed_tweets_count)
-
-        # Prepare dataframes if this is the first inference run.
-        # todo post _estimate_moral_value_relevance_for_tweets: add check if tweets have no users, remove tweets (necessary?).
-        if processed_tweets_count == 0:
-            self._tweets_df = self._tweets_df.drop(["text", "embeddings"], axis=1, errors="ignore")
-            self._tweets_df["num_words"] = self._tweets_df.clean_text.str.split().apply(len)
-            self._users_df["num_tweets"] = 0
-            self._users_df["num_words"] = 0
-            if "id" in self._users_df.columns:
-                self._users_df = self._users_df.set_index("id")[[
-                    "description", "favourites_count", "friends_count", "id_str", "location", "name", "mv_scores",
-                    "num_tweets", "num_words", "screen_name", "party"
-                ]]
-
-        # Process tweets.
-        # Note: Performance can be improved with batch processing (i. e. multiple tweets at once).
-        pbar = tqdm(total=len(self._tweets_df))
-        pbar.n = processed_tweets_count
-        pbar.refresh()
-        tweet_embeddings = []
-
-        for i in range(processed_tweets_count, len(self._tweets_df)):
-            tweet = self._tweets_df.iloc[i]
-            num_words_in_tweet = len(tweet.clean_text.split()) if tweet.clean_text != "" else 0
-            pbar.update(1)
-
-            if tweet.user_id not in user_id_set:
-                self._logger.info("User ID " + str(tweet.user_id) + " not found for tweet #" + str(i))
-                tweet_embeddings.append((i, [None]))
-                continue
-
-            if num_words_in_tweet == 0:
-                tweet_embeddings.append((i, [None]))
-                continue
-
-            # Infer embeddings for each token in this tweet.
-            tweet_embeddings.append((i, bert_client.encode([tweet.clean_text])[0][1:num_words_in_tweet + 1]))
-
-            # Update tweet and word count for current users.
-            self._users_df.at[tweet.user_id, "num_tweets"] = self._users_df.at[tweet.user_id, "num_tweets"] + 1
-            self._users_df.at[tweet.user_id, "num_words"] = \
-                self._users_df.at[tweet.user_id, "num_words"] + num_words_in_tweet
-
-            if (i + 1) % saving_interval == 0 and i > processed_tweets_count:
-                pickle.dump(
-                    tweet_embeddings,
-                    open(
-                        embedding_dir + str(max(processed_tweets_count, i - saving_interval)) + "-" + str(i) + ".pkl",
-                        "wb+"
-                    )
-                )
-                self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
-                self._users_df.to_pickle(path=self._user_path.split(".")[:-1][0] + ".pkl")
-        pbar.close()
-
-        # Save updated dataframe.
-        self._tweets_df.drop("num_words", axis=1)
-        self._tweets_df.to_pickle(path=self._tweets_path.split(".")[:-1][0] + ".pkl")
-
-
     def _predict_moral_relevance(self):
         """
         Estimates relevance of moral value for all tweets using pre-trained model on tweet embeddings for prediction of
@@ -199,7 +121,6 @@ class Corpus:
         :return:
         """
         self._logger.info("Inferring embeddings and estimating relevance of moral values for tweets.")
-        bert_client = BertClient()
         # use only if start DF still has embeddings column
         self._tweets_df = self._tweets_df.drop(["text", "embeddings"], axis=1, errors="ignore")
 
@@ -215,11 +136,16 @@ class Corpus:
                 "description", "favourites_count", "friends_count", "id_str", "location", "name", "mv_scores",
                 "num_tweets", "num_words", "screen_name", "party"
             ]]
-        processed_tweets_count = max(0, np.count_nonzero(self._tweets_df.processed) - 5)
+        processed_tweets_count = max(0, np.count_nonzero(self._tweets_df.processed))
         user_id_set = set(self._users_df.index.values)
+
+        # Terminate if all tweets have already been processed.
+        if processed_tweets_count == len(self._tweets_df):
+            return
 
         # Process tweets.
         # Note: Performance can be improved with batch processing (i. e. multiple tweets at once).
+        bert_client = BertClient()
         pbar = tqdm(total=len(self._tweets_df))
         pbar.n = processed_tweets_count
         pbar.refresh()
@@ -235,6 +161,7 @@ class Corpus:
                 continue
 
             if num_words_in_tweet == 0:
+                self._tweets_df.iloc[i, self._tweets_df.columns.get_loc('processed')] = True
                 continue
 
             # Infer embeddings for each token in this tweet.
