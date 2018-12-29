@@ -65,6 +65,30 @@ class Corpus:
         self._predict_moral_relevance()
         self._train_party_classifier()
 
+        self._examine_feature_importance()
+
+    def _examine_feature_importance(self):
+        """
+        Investigate importance of features for classification of political party. 
+        :return: 
+        """
+
+        df = self._users_df
+        df.mv_scores = df.mv_scores.values / df.num_words.values
+        mvs = self._moral_matrix.get_moral_values()
+        df[mvs] = pd.DataFrame(df.mv_scores.values.tolist(), index=df.index)
+        df = df.dropna()
+
+        democrats_features_df = df[df.party == "Democratic Party"][mvs]
+        republicans_features_df = df[df.party == "Republican Party"][mvs]
+
+        plt.figure(1)
+        democrats_features_df.boxplot()
+        plt.show()
+        plt.figure(2)
+        republicans_features_df.boxplot()
+        plt.show()
+
     def _train_party_classifier(self):
         """
         Trains classifier learning to predict political party from moral relevance weight vectors.
@@ -75,7 +99,7 @@ class Corpus:
         pp_predictor = None
 
         # Build model predicting moral values for word.
-        if True or not os.path.isfile(pp_model_path):
+        if not os.path.isfile(pp_model_path):
             df = self._users_df.sample(frac=1)
             df.mv_scores = df.mv_scores.values / df.num_words.values
             df.loc[df.party == "Libertarians", "party"] = "Republican Party"
@@ -113,7 +137,7 @@ class Corpus:
 
         # Load built model.
         else:
-            pp_predictor = pd.read_pickle(path=pp_model_path)
+            pp_predictor = pickle.load(open(pp_model_path, "rb"))  # pd.read_pickle(path=pp_model_path)
 
         return pp_predictor
 

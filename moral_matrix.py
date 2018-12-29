@@ -41,49 +41,6 @@ class MoralMatrix:
         self._morals_to_phrases_df, self._phrase_embeddings = self._read_moral_dictionary(path_to_file)
         self._mv_predictor = self._train_moral_value_classifier()
 
-
-    def _cross_validate_moral_value_classifier(self):
-        """
-        Cross-validates moral value classifier.
-        :return:
-        """
-
-        df = self._phrase_embeddings
-        x = np.asarray([np.asarray(x) for x in df.embeddings.values])
-        le = preprocessing.LabelEncoder()
-        le.fit(self._morals_to_phrases_df.index.values)
-        y = le.transform(df.moral_values.values)
-
-        X_sel = x
-        print(y)
-        xgtrain = xgb.DMatrix(X_sel, label=y)
-
-        clf = xgb.XGBClassifier(
-            objective='multi:softmax',
-            n_classes=5,
-            colsample_bytree=0.7,
-            learning_rate=0.05,
-            n_estimators=1000,
-            n_jobs=0,
-            nthread=0
-        )
-
-        cvresult = xgb.cv(
-            clf.get_xgb_params(),
-            xgtrain,
-            num_boost_round=5000,
-            nfold=5,
-            metrics=["auc"],
-            early_stopping_rounds=50,
-            stratified=True
-        )
-
-        print('Best number of trees = {}'.format(cvresult.shape[0]))
-        clf.set_params(n_estimators=cvresult.shape[0])
-        print('Fit on the trainingsdata')
-        clf.fit(X_sel, y, eval_metric='auc')
-        print('Overall AUC:', roc_auc_score(y, clf.predict_proba(X_sel)[:, 1]))
-
     def _train_moral_value_classifier(self):
         """
         Trains model classifying phrases into sentiments.
@@ -204,7 +161,7 @@ class MoralMatrix:
                 "authority": 1.0 / 3,
                 "sanctity": 1.0 / 3
             },
-            "conservative": {
+            "libertarian": {
                 "care": 1.0 / 3,
                 "liberty": 5,
                 "fairness": 1,
@@ -212,7 +169,7 @@ class MoralMatrix:
                 "authority": 1.0 / 3,
                 "sanctity": 1.0 / 3
             },
-            "libertarian": {
+            "conservative": {
                 "care": 1,
                 "liberty": 1,
                 "fairness": 1,
@@ -226,6 +183,8 @@ class MoralMatrix:
             weight_sum = sum(list(moral_matrix_weights[affiliation].values()))
             for moral_value in moral_matrix_weights[affiliation]:
                 moral_matrix_weights[affiliation][moral_value] /= weight_sum
+
+        print(moral_matrix_weights)
 
         return moral_matrix_weights
 
