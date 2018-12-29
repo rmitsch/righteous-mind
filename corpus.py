@@ -17,14 +17,12 @@ import wordsegment
 from spacy.lang.en.stop_words import STOP_WORDS
 from sklearn import preprocessing
 import xgboost as xgb
-from sklearn.metrics import classification_report, f1_score, roc_curve, auc, precision_recall_curve
+from sklearn.metrics import classification_report
 from moral_matrix import MoralMatrix
-from sklearn.model_selection import StratifiedShuffleSplit, RandomizedSearchCV, KFold
+from sklearn.model_selection import StratifiedShuffleSplit
 import matplotlib.pyplot as plt
-from sklearn.utils.fixes import signature
-from sklearn.metrics import average_precision_score
-from sklearn.preprocessing import label_binarize
 import utils
+import shap
 
 
 class Corpus:
@@ -63,11 +61,9 @@ class Corpus:
         self._estimate_emotional_intensity()
         self._clean_tweets()
         self._predict_moral_relevance()
-        self._train_party_classifier()
+        self._party_predictor = self._train_party_classifier()
 
-        self._examine_feature_importance()
-
-    def _examine_feature_importance(self):
+    def examine_feature_importance(self):
         """
         Investigate importance of features for classification of political party. 
         :return: 
@@ -82,6 +78,7 @@ class Corpus:
         democrats_features_df = df[df.party == "Democratic Party"][mvs]
         republicans_features_df = df[df.party == "Republican Party"][mvs]
 
+        # Distribution of MVs over parties.
         plt.figure(1)
         democrats_features_df.boxplot()
         plt.show()
@@ -89,9 +86,27 @@ class Corpus:
         republicans_features_df.boxplot()
         plt.show()
 
-    def _train_party_classifier(self):
+        # XGBoost feature importance.
+        self._party_predictor.feature_names = mvs
+        self._party_predictor.feature_types = None
+        fig, ax = plt.subplots(figsize=(12, 18))
+        xgb.plot_importance(self._party_predictor, max_num_features=50, height=0.8, ax=ax)
+        plt.show()
+
+        # Check notebook for SHAP stuff.
+        shap.initjs()
+        explainer = shap.TreeExplainer(self._party_predictor)
+        df = self._users_df.sample(frac=1)
+        df.mv_scores = df.mv_scores.values / df.num_words.values
+        df.loc[df.party == "Libertarians", "party"] = "Republican Party"
+        x = np.asarray([np.asarray(x) for x in df.mv_scores.values])
+        shap_values = explainer.shap_values(x)
+        shap.force_plot(explainer.expected_value, shap_values[0, :], x[0, :])
+
+    def _train_party_classifier(self, force: bool = False):
         """
         Trains classifier learning to predict political party from moral relevance weight vectors.
+        :param force: Trains and overwrites classifier even if already available.
         :return:
         """
 
@@ -99,7 +114,7 @@ class Corpus:
         pp_predictor = None
 
         # Build model predicting moral values for word.
-        if not os.path.isfile(pp_model_path):
+        if force or not os.path.isfile(pp_model_path):
             df = self._users_df.sample(frac=1)
             df.mv_scores = df.mv_scores.values / df.num_words.values
             df.loc[df.party == "Libertarians", "party"] = "Republican Party"

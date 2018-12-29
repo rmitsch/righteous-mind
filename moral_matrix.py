@@ -184,8 +184,6 @@ class MoralMatrix:
             for moral_value in moral_matrix_weights[affiliation]:
                 moral_matrix_weights[affiliation][moral_value] /= weight_sum
 
-        print(moral_matrix_weights)
-
         return moral_matrix_weights
 
     def predict_mv_probabilities(self, embeddings: np.ndarray) -> np.ndarray:
