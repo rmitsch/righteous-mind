@@ -1,46 +1,15 @@
-# righteous-mind
-Approximation of an empirical verification of the moral-based framework to distuingish between different political preferences as utilized in "The Righteous Mind" by Jonathan Haidt (2012).
+# Politics, Morals and Tweets: 
+## Identifying Political Affiliation Utilizing Moral Foundations Theory and Contextual Embeddings
 
-## Alternatives for Semantic Encoding
-* GuidedLDA
-    * Con: No semantic context.
-* ELMo w/ baseline sentence (SIF) encoding.
-    * Con: Separate phrase encoding necessary.
-* ELMo w/ word-to-phrase comparison.
-    * Con: Separate phrase encoding necessary (for moral phrases).
-    * Con: Number of comparisons skyrockets (n_words_in_tweets * n_moral_phrases instead of n_moral_phrases * n_tweets). 
-* Universal Sentence Encoder.
-    * Con: Apparently problem w/ handling OOV words.
-* BERT
-    * Con: Resource requirements apparently exceed machine capability.
-
-## Alternatives for MV classification with xgboost
-
-* Fine-tuning BERT.
-
-## Alternatives for Party Classification
-
-* Taking emotional intensity into account.
-    
+This project seeks to extract moral preferences from US-American politician's tweets and predict their political ideology based on these moral preferences. The underlying theoretical framework is the _[Moral Foundations Theory](https://en.wikipedia.org/wiki/Moral_foundations_theory)_.
+   
 ------
 
 #### Notes
 
-Starting BERT server for moral matrix (i. e. we want one embedding vector for the whole phrase): 
-
+* Created for the Social Media Data: Quantitative Text Analysis of Big Data, University of Vienna, Winter Semester 2018/2019.
+* Dependencies can be found in `environment.yml`.
+* Starting BERT server for inferring seed phrases for moral values (i. e. we want one embedding vector for the whole phrase): 
 ```bert-serving-start -model_dir ~/Development/data/BERT/base/ -num_worker=1 -cpu``` 
- 
-Starting BERT server for tweets (i. e. we want one embedding vector per token): 
-
+* Starting BERT server for inferring words in tweets (i. e. we want one embedding vector per token): 
 ```bert-serving-start -model_dir ~/Development/data/BERT/base/ -num_worker=1 -cpu -max_seq_len=40 -pooling_strategy NONE``` 
-
-----
-
-#### Literature
-
-- https://arxiv.org/abs/1709.05467
-- https://www.researchgate.net/publication/258698999_Measuring_Moral_Rhetoric_in_Text
-- http://morteza-dehghani.net/wp-content/uploads/morality-lines-detecting.pdf
-- https://medium.com/huggingface/universal-word-sentence-embeddings-ce48ddc8fc3a
-- https://arxiv.org/abs/1810.04805
-- ElMo, Universal Sentence Encoder, SIF, Guided Topic Modeling
