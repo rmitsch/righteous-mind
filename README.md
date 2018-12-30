@@ -1,4 +1,4 @@
-#### Politics, Morals and Tweets: Identifying Political Affiliation Utilizing Moral Foundations Theory and Contextual Embeddings
+### Politics, Morals and Tweets: Identifying Political Affiliation Utilizing Moral Foundations Theory and Contextual Embeddings
 
 This project seeks to extract moral preferences from US-American politician's tweets and predict their political ideology based on these moral preferences. The underlying theoretical framework is the _[Moral Foundations Theory](https://en.wikipedia.org/wiki/Moral_foundations_theory)_.
    
