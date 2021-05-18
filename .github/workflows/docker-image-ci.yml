@@ -24,7 +24,7 @@ jobs:
         with:
           file: docker/Dockerfile
           push: true
-          tags: user/app:latest
+          tags: rmitsch/righteous-mind:latest
       -
         name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
